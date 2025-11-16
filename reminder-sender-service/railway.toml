@@ -1,0 +1,13 @@
+[[services]]
+# Cron job service - runs every 30 minutes to send reminders
+serviceName = "reminder-sender-cron"
+
+[services.build]
+builder = "NIXPACKS"
+buildCommand = "cd .. && pip install -r requirements.txt"
+
+[services.deploy]
+# Run the reminder sender every 30 minutes
+cronSchedule = "*/30 * * * *"
+startCommand = "python reminder_sender.py"
+restartPolicyType = "NEVER"

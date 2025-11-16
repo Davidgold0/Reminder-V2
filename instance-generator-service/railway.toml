@@ -1,0 +1,13 @@
+[[services]]
+# Cron job service - runs daily to generate event instances
+serviceName = "instance-generator-cron"
+
+[services.build]
+builder = "NIXPACKS"
+buildCommand = "cd .. && pip install -r requirements.txt"
+
+[services.deploy]
+# Run the instance generator script daily at 2 AM UTC
+cronSchedule = "0 2 * * *"
+startCommand = "python instance_generator.py"
+restartPolicyType = "NEVER"

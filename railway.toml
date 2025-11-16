@@ -9,29 +9,3 @@ builder = "NIXPACKS"
 startCommand = "gunicorn 'app:create_app()'"
 healthcheckPath = "/"
 restartPolicyType = "ON_FAILURE"
-
-[[services]]
-# Cron job service - runs daily to generate event instances
-serviceName = "instance-generator-cron"
-
-[services.build]
-builder = "NIXPACKS"
-
-[services.deploy]
-# Run the instance generator script daily at 2 AM UTC
-cronSchedule = "0 2 * * *"
-startCommand = "python instance_generator.py"
-restartPolicyType = "NEVER"
-
-[[services]]
-# Cron job service - runs every 30 minutes to send reminders
-serviceName = "reminder-sender-cron"
-
-[services.build]
-builder = "NIXPACKS"
-
-[services.deploy]
-# Run the reminder sender every 30 minutes
-cronSchedule = "*/30 * * * *"
-startCommand = "python reminder_sender.py"
-restartPolicyType = "NEVER"

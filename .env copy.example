@@ -1,0 +1,25 @@
+# Flask Configuration
+SECRET_KEY=your-secret-key-here-generate-with-secrets-token-hex
+FLASK_ENV=production
+
+# Railway will automatically set PORT, but you can override locally
+# PORT=5000
+
+# Database Configuration
+# Railway automatically sets MYSQL_URL when you add MySQL service
+# For local development, use:
+# MYSQL_URL=mysql://root:password@localhost/reminder_db
+
+# Green API (WhatsApp) Configuration
+GREEN_API_BASE_URL=https://api.green-api.com
+GREEN_API_INSTANCE_ID=your-instance-id-here
+GREEN_API_TOKEN=your-token-here
+
+# Webhook Configuration
+# Set this to your Railway app URL + /webhook
+# Example: https://your-app.railway.app/webhook
+WEBHOOK_URL=https://your-app.railway.app/webhook
+WEBHOOK_TOKEN=your-secure-webhook-token-here
+
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key-here

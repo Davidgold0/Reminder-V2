@@ -87,6 +87,37 @@ def create_app():
             'database': db_status
         }
     
+    @app.route('/generate-instances', methods=['POST'])
+    def generate_instances_endpoint():
+        """API endpoint to trigger instance generation for recurring events"""
+        # Import inside function to avoid circular dependency
+        from instance_generator import generate_all_instances
+        try:
+            result = generate_all_instances()
+            return result, 200
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }, 500
+    
+    @app.route('/send-reminders', methods=['POST'])
+    def send_reminders_endpoint():
+        """API endpoint to trigger reminder sending (both initial and escalating)"""
+        # Import inside function to avoid circular dependency
+        from reminder_sender import main as send_reminders
+        try:
+            send_reminders()
+            return {
+                'success': True,
+                'message': 'Reminders sent successfully'
+            }, 200
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }, 500
+    
     return app
 
 

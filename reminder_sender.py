@@ -245,6 +245,11 @@ def main():
     print("\n" + "="*60)
     print("REMINDER SENDER SERVICE COMPLETED")
     print("="*60 + "\n")
+    
+    return {
+        'success': True,
+        'message': 'Reminder processes completed'
+    }
 
 
 if __name__ == "__main__":

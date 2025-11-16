@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app import create_app
+from main import create_app
 from services.db.events import Event, mark_message_sent
 from services.db.messages import add_message
 from services.messages.whatsapp_client import get_whatsapp_client

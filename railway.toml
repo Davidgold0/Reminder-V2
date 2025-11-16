@@ -6,6 +6,5 @@ serviceName = "reminder-app"
 builder = "NIXPACKS"
 
 [services.deploy]
-startCommand = "gunicorn 'app:create_app()'"
-healthcheckPath = "/"
+healthcheckPath = "/health"
 restartPolicyType = "ON_FAILURE"

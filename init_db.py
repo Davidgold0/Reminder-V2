@@ -5,7 +5,7 @@ Run this to create all database tables.
 Usage:
     python init_db.py
 """
-from app import create_app, db
+from main import create_app, db
 
 if __name__ == '__main__':
     app = create_app()

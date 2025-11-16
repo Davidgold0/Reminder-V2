@@ -7,7 +7,7 @@ This service should run separately from the main Flask app.
 import os
 import sys
 from datetime import datetime, timedelta
-from app import create_app, db
+from main import create_app, db
 
 
 def generate_all_instances():

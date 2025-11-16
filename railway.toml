@@ -3,7 +3,7 @@
 serviceName = "reminder-app"
 
 [services.build]
-builder = "NIXPACKS"
+builder = "RAILPACK"
 
 [services.deploy]
 healthcheckPath = "/health"

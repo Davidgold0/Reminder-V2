@@ -34,7 +34,17 @@ class Config:
     @classmethod
     def validate_green_api_config(cls) -> bool:
         """Validate that Green API credentials are configured"""
-        return all([
-            cls.GREEN_API_INSTANCE_ID,
-            cls.GREEN_API_TOKEN
-        ])
+        required_configs = {
+            'GREEN_API_INSTANCE_ID': cls.GREEN_API_INSTANCE_ID,
+            'GREEN_API_TOKEN': cls.GREEN_API_TOKEN
+        }
+        
+        missing_configs = [name for name, value in required_configs.items() if not value]
+        
+        if missing_configs:
+            print("❌ Missing Green API configuration:")
+            for config in missing_configs:
+                print(f"   - {config}")
+            return False
+        
+        return True

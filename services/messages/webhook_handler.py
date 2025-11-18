@@ -30,6 +30,8 @@ def handle_webhook():
         client = get_whatsapp_client()
         message_data = client.parse_incoming_message(data)
         
+        print(f"Parsed message data: {message_data}")
+        
         if message_data:
             phone = message_data['phone']
             message_text = message_data['message']

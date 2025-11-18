@@ -169,7 +169,7 @@ class WhatsAppClient:
         Parse an incoming notification to extract message details
         
         Args:
-            notification: Notification object from Green API
+            notification: Notification object from Green API (can be webhook or API notification)
             
         Returns:
             dict: Parsed message data or None if not a text message
@@ -179,11 +179,14 @@ class WhatsAppClient:
                 - receipt_id (int): Notification receipt ID
         """
         try:
-            if notification.get('body', {}).get('typeWebhook') == 'incomingMessageReceived':
-                message_data = notification.get('body', {}).get('messageData', {})
+            # Handle webhook format (direct structure) vs API notification format (wrapped in 'body')
+            webhook_data = notification.get('body') if 'body' in notification else notification
+            
+            if webhook_data.get('typeWebhook') == 'incomingMessageReceived':
+                message_data = webhook_data.get('messageData', {})
                 
                 # Extract phone number (remove @c.us)
-                sender = notification.get('body', {}).get('senderData', {}).get('sender', '')
+                sender = webhook_data.get('senderData', {}).get('sender', '')
                 phone = sender.replace('@c.us', '')
                 
                 # Only process text messages
@@ -191,7 +194,7 @@ class WhatsAppClient:
                     return {
                         'phone': phone,
                         'message': message_data.get('textMessageData', {}).get('textMessage', ''),
-                        'timestamp': notification.get('body', {}).get('timestamp'),
+                        'timestamp': webhook_data.get('timestamp'),
                         'receipt_id': notification.get('receiptId')
                     }
             

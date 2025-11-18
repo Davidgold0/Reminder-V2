@@ -1,8 +1,45 @@
 import os
+import logging
+import sys
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 load_dotenv()
+
+# Configure logging
+def setup_logging():
+    """Configure application-wide logging"""
+    # Get log level from environment variable, default to INFO for production
+    log_level_name = os.environ.get('LOG_LEVEL', 'INFO').upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # Remove existing handlers
+    root_logger.handlers.clear()
+    
+    # Add console handler (for Railway logs)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    
+    # Log startup message
+    root_logger.info(f"Logging initialized at {log_level_name} level")
+    
+    return root_logger
+
+# Initialize logging
+logger = setup_logging()
+
 # Initialize SQLAlchemy (without binding to app yet)
 db = SQLAlchemy()
 
@@ -13,6 +50,9 @@ def create_app():
     Creates and configures the Flask application.
     """
     app = Flask(__name__)
+    
+    # Log application startup
+    logger.info("Creating Flask application...")
     
     # Basic configuration
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')

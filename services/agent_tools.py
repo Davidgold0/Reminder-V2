@@ -10,7 +10,6 @@ import logging
 
 # Set up global logger for agent tools
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 @tool

@@ -16,6 +16,11 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
     
+    # Logging configuration
+    # Set LOG_LEVEL environment variable to: DEBUG, INFO, WARNING, ERROR, or CRITICAL
+    # Default is INFO for production, DEBUG for development
+    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'DEBUG' if FLASK_ENV == 'development' else 'INFO')
+    
     # Database configuration
     MYSQL_URL = os.environ.get('MYSQL_URL')
     

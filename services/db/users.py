@@ -4,7 +4,6 @@ import logging
 
 # Set up global logger for user database operations
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class User(db.Model):

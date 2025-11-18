@@ -4,7 +4,6 @@ import logging
 
 # Set up global logger for event database operations
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class Event(db.Model):

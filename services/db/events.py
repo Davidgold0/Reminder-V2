@@ -1,5 +1,10 @@
 from datetime import datetime
 from main import db
+import logging
+
+# Set up global logger for event database operations
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class Event(db.Model):
@@ -85,11 +90,18 @@ def add_event(user_id, description, event_time, is_recurring=False,
             - event (dict): Event data if successful
             - error (str): Error message if failed
     """
+    logger.info(f"add_event called for user_id={user_id}, is_recurring={is_recurring}")
+    logger.debug(f"Event details: description='{description}', event_time={event_time}, "
+                 f"recurrence_frequency={recurrence_frequency}, recurrence_interval={recurrence_interval}, "
+                 f"recurrence_days_of_week={recurrence_days_of_week}")
+    
     try:
         # Verify user exists
         from services.db.users import User
+        logger.debug(f"Verifying user exists: user_id={user_id}")
         user = User.query.get(user_id)
         if not user:
+            logger.error(f"User with ID {user_id} does not exist")
             return {
                 'success': False,
                 'error': f'User with ID {user_id} does not exist'
@@ -97,12 +109,15 @@ def add_event(user_id, description, event_time, is_recurring=False,
         
         # Validate recurring fields
         if is_recurring:
+            logger.debug("Validating recurring event fields")
             if not recurrence_frequency:
+                logger.warning(f"Recurring event missing recurrence_frequency for user_id={user_id}")
                 return {
                     'success': False,
                     'error': 'recurrence_frequency is required for recurring events'
                 }
             if recurrence_frequency not in ['daily', 'weekly', 'monthly', 'yearly']:
+                logger.warning(f"Invalid recurrence_frequency '{recurrence_frequency}' for user_id={user_id}")
                 return {
                     'success': False,
                     'error': 'recurrence_frequency must be daily, weekly, monthly, or yearly'
@@ -124,6 +139,9 @@ def add_event(user_id, description, event_time, is_recurring=False,
         db.session.add(new_event)
         db.session.commit()
         
+        logger.info(f"Successfully created {'recurring' if is_recurring else 'one-time'} event: "
+                   f"id={new_event.id}, user_id={user_id}, description='{description}'")
+        
         return {
             'success': True,
             'event': new_event.to_dict()
@@ -131,6 +149,7 @@ def add_event(user_id, description, event_time, is_recurring=False,
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in add_event for user_id {user_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -155,22 +174,29 @@ def generate_instances(event_id, start_date, end_date):
     """
     from datetime import timedelta
     
+    logger.info(f"generate_instances called for event_id={event_id}, "
+               f"start_date={start_date}, end_date={end_date}")
+    
     try:
         # Get the template event
+        logger.debug(f"Fetching template event: event_id={event_id}")
         template = Event.query.get(event_id)
         if not template:
+            logger.error(f"Event with ID {event_id} does not exist")
             return {
                 'success': False,
                 'error': f'Event with ID {event_id} does not exist'
             }
         
         if not template.is_recurring:
+            logger.warning(f"Event {event_id} is not a recurring template")
             return {
                 'success': False,
                 'error': 'Event is not a recurring template'
             }
         
         if template.parent_event_id is not None:
+            logger.warning(f"Event {event_id} is an instance, not a template")
             return {
                 'success': False,
                 'error': 'Cannot generate instances from an instance. Use the parent event.'
@@ -253,6 +279,8 @@ def generate_instances(event_id, start_date, end_date):
         
         db.session.commit()
         
+        logger.info(f"Successfully generated {len(instances)} instances for event_id={event_id}")
+        
         return {
             'success': True,
             'instances': [inst.to_dict() for inst in instances],
@@ -261,6 +289,7 @@ def generate_instances(event_id, start_date, end_date):
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in generate_instances for event_id {event_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -284,12 +313,17 @@ def get_upcoming_events(user_id, start_time=None, end_time=None, limit=50):
             - count (int): Number of events returned
             - error (str): Error message if failed
     """
+    logger.info(f"get_upcoming_events called for user_id={user_id}, limit={limit}")
+    logger.debug(f"Time filters: start_time={start_time}, end_time={end_time}")
+    
     try:
         from services.db.users import User
         
         # Verify user exists
+        logger.debug(f"Verifying user exists: user_id={user_id}")
         user = User.query.get(user_id)
         if not user:
+            logger.error(f"User with ID {user_id} does not exist")
             return {
                 'success': False,
                 'error': f'User with ID {user_id} does not exist'
@@ -299,6 +333,7 @@ def get_upcoming_events(user_id, start_time=None, end_time=None, limit=50):
         if start_time is None:
             from datetime import timedelta
             start_time = datetime.utcnow() - timedelta(days=1)
+            logger.debug(f"Using default start_time: {start_time}")
         
         # Build query - exclude recurring templates (parent_event_id is None and is_recurring is True)
         query = Event.query.filter(
@@ -315,6 +350,8 @@ def get_upcoming_events(user_id, start_time=None, end_time=None, limit=50):
         
         events = query.order_by(Event.event_time.asc()).limit(limit).all()
         
+        logger.info(f"Retrieved {len(events)} upcoming events for user_id={user_id}")
+        
         return {
             'success': True,
             'events': [event.to_dict() for event in events],
@@ -322,6 +359,7 @@ def get_upcoming_events(user_id, start_time=None, end_time=None, limit=50):
         }
         
     except Exception as e:
+        logger.exception(f"Exception in get_upcoming_events for user_id {user_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -344,10 +382,14 @@ def get_events_needing_message(start_time=None, end_time=None):
             - count (int): Number of events returned
             - error (str): Error message if failed
     """
+    logger.info(f"get_events_needing_message called")
+    logger.debug(f"Time filters: start_time={start_time}, end_time={end_time}")
+    
     try:
         # Default start time is now
         if start_time is None:
             start_time = datetime.utcnow()
+            logger.debug(f"Using default start_time: {start_time}")
         
         # Build query - only events that haven't been sent yet
         query = Event.query.filter(
@@ -364,6 +406,8 @@ def get_events_needing_message(start_time=None, end_time=None):
         
         events = query.order_by(Event.event_time.asc()).all()
         
+        logger.info(f"Retrieved {len(events)} events needing messages")
+        
         return {
             'success': True,
             'events': [event.to_dict() for event in events],
@@ -371,6 +415,7 @@ def get_events_needing_message(start_time=None, end_time=None):
         }
         
     except Exception as e:
+        logger.exception(f"Exception in get_events_needing_message: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -390,9 +435,13 @@ def mark_message_sent(event_id):
             - event (dict): Updated event data if successful
             - error (str): Error message if failed
     """
+    logger.info(f"mark_message_sent called for event_id={event_id}")
+    
     try:
+        logger.debug(f"Fetching event: event_id={event_id}")
         event = Event.query.get(event_id)
         if not event:
+            logger.error(f"Event with ID {event_id} does not exist")
             return {
                 'success': False,
                 'error': f'Event with ID {event_id} does not exist'
@@ -404,6 +453,8 @@ def mark_message_sent(event_id):
         
         db.session.commit()
         
+        logger.info(f"Successfully marked message as sent for event_id={event_id}")
+        
         return {
             'success': True,
             'event': event.to_dict()
@@ -411,6 +462,7 @@ def mark_message_sent(event_id):
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in mark_message_sent for event_id {event_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -427,11 +479,15 @@ def confirm_event(event_id: int) -> dict:
     Returns:
         dict: Result with success status and event details or error message
     """
+    logger.info(f"confirm_event called for event_id={event_id}")
+    
     try:
         # Get the event
+        logger.debug(f"Fetching event: event_id={event_id}")
         event = Event.query.get(event_id)
         
         if not event:
+            logger.error(f"Event with ID {event_id} does not exist")
             return {
                 'success': False,
                 'error': f'Event with ID {event_id} does not exist'
@@ -443,6 +499,8 @@ def confirm_event(event_id: int) -> dict:
         
         db.session.commit()
         
+        logger.info(f"Successfully confirmed event: event_id={event_id}, description='{event.description}'")
+        
         return {
             'success': True,
             'event': event.to_dict(),
@@ -451,6 +509,7 @@ def confirm_event(event_id: int) -> dict:
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in confirm_event for event_id {event_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)

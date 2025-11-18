@@ -1,5 +1,10 @@
 from datetime import datetime
 from main import db
+import logging
+
+# Set up global logger for user database operations
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class User(db.Model):
@@ -59,10 +64,16 @@ def add_user(phone_number, first_name=None, last_name=None, timezone=None, langu
     Raises:
         None: All exceptions are caught and returned in the response
     """
+    logger.info(f"add_user called for phone_number={phone_number}")
+    logger.debug(f"User details: first_name={first_name}, last_name={last_name}, "
+                 f"timezone={timezone}, language={language}")
+    
     try:
         # Check if user with this phone number already exists
+        logger.debug(f"Checking for existing user with phone: {phone_number}")
         existing_user = User.query.filter_by(phone_number=phone_number).first()
         if existing_user:
+            logger.warning(f"User with phone {phone_number} already exists (id={existing_user.id})")
             return {
                 'success': False,
                 'error': f'User with phone number {phone_number} already exists'
@@ -70,6 +81,7 @@ def add_user(phone_number, first_name=None, last_name=None, timezone=None, langu
         
         # Determine if this is a full registration
         is_registered = all([first_name, last_name, timezone, language])
+        logger.debug(f"User registration status will be: {is_registered}")
         
         # Create new user
         new_user = User(
@@ -85,6 +97,9 @@ def add_user(phone_number, first_name=None, last_name=None, timezone=None, langu
         db.session.add(new_user)
         db.session.commit()
         
+        logger.info(f"Successfully created user: id={new_user.id}, phone={phone_number}, "
+                   f"is_registered={is_registered}")
+        
         return {
             'success': True,
             'user': new_user.to_dict()
@@ -92,6 +107,7 @@ def add_user(phone_number, first_name=None, last_name=None, timezone=None, langu
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in add_user for phone {phone_number}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -115,30 +131,51 @@ def update_user(phone_number, first_name=None, last_name=None, timezone=None, la
             - user (dict): Updated user data if successful
             - error (str): Error message if failed
     """
+    logger.info(f"update_user called for phone_number={phone_number}")
+    logger.debug(f"Update fields: first_name={first_name}, last_name={last_name}, "
+                 f"timezone={timezone}, language={language}")
+    
     try:
+        logger.debug(f"Fetching user by phone: {phone_number}")
         user = User.query.filter_by(phone_number=phone_number).first()
         
         if not user:
+            logger.warning(f"No user found with phone number {phone_number}")
             return {
                 'success': False,
                 'error': f'No user found with phone number {phone_number}'
             }
         
+        logger.debug(f"User found: id={user.id}, current_is_registered={user.is_registered}")
+        
         # Update fields if provided
+        updated_fields = []
         if first_name is not None:
             user.first_name = first_name
+            updated_fields.append('first_name')
         if last_name is not None:
             user.last_name = last_name
+            updated_fields.append('last_name')
         if timezone is not None:
             user.timezone = timezone
+            updated_fields.append('timezone')
         if language is not None:
             user.language = language
+            updated_fields.append('language')
+        
+        logger.debug(f"Updated fields: {', '.join(updated_fields) if updated_fields else 'none'}")
         
         # Check if user is now fully registered
+        was_registered = user.is_registered
         if user.first_name and user.last_name and user.timezone and user.language:
             user.is_registered = True
         
         db.session.commit()
+        
+        if not was_registered and user.is_registered:
+            logger.info(f"User {phone_number} (id={user.id}) completed registration")
+        else:
+            logger.info(f"User {phone_number} (id={user.id}) updated successfully")
         
         return {
             'success': True,
@@ -147,6 +184,7 @@ def update_user(phone_number, first_name=None, last_name=None, timezone=None, la
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in update_user for phone {phone_number}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -166,21 +204,26 @@ def get_user_by_phone(phone_number):
             - user (dict): User data if found
             - error (str): Error message if not found or failed
     """
+    logger.debug(f"get_user_by_phone called for phone_number={phone_number}")
+    
     try:
         user = User.query.filter_by(phone_number=phone_number).first()
         
         if user:
+            logger.debug(f"User found: id={user.id}, is_registered={user.is_registered}")
             return {
                 'success': True,
                 'user': user.to_dict()
             }
         else:
+            logger.debug(f"No user found with phone number {phone_number}")
             return {
                 'success': False,
                 'error': f'No user found with phone number {phone_number}'
             }
             
     except Exception as e:
+        logger.exception(f"Exception in get_user_by_phone for phone {phone_number}: {str(e)}")
         return {
             'success': False,
             'error': str(e)

@@ -1,5 +1,10 @@
 from datetime import datetime
 from main import db
+import logging
+
+# Set up global logger for message database operations
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class Message(db.Model):
@@ -55,9 +60,14 @@ def add_message(user_id, sent_by, message_text, required_follow_up=False, event_
             - message (dict): Message data if successful
             - error (str): Error message if failed
     """
+    logger.info(f"add_message called for user_id={user_id}, sent_by={sent_by}, event_id={event_id}")
+    logger.debug(f"Message text (first 100 chars): {message_text[:100]}...")
+    logger.debug(f"required_follow_up={required_follow_up}")
+    
     try:
         # Validate sent_by value
         if sent_by not in ['ai', 'user']:
+            logger.warning(f"Invalid sent_by value: {sent_by}")
             return {
                 'success': False,
                 'error': "sent_by must be either 'ai' or 'user'"
@@ -65,8 +75,10 @@ def add_message(user_id, sent_by, message_text, required_follow_up=False, event_
         
         # Verify user exists
         from services.db.users import User
+        logger.debug(f"Verifying user exists: user_id={user_id}")
         user = User.query.get(user_id)
         if not user:
+            logger.error(f"User with ID {user_id} does not exist")
             return {
                 'success': False,
                 'error': f'User with ID {user_id} does not exist'
@@ -75,8 +87,10 @@ def add_message(user_id, sent_by, message_text, required_follow_up=False, event_
         # Verify event exists if provided
         if event_id is not None:
             from services.db.events import Event
+            logger.debug(f"Verifying event exists: event_id={event_id}")
             event = Event.query.get(event_id)
             if not event:
+                logger.error(f"Event with ID {event_id} does not exist")
                 return {
                     'success': False,
                     'error': f'Event with ID {event_id} does not exist'
@@ -95,6 +109,9 @@ def add_message(user_id, sent_by, message_text, required_follow_up=False, event_
         db.session.add(new_message)
         db.session.commit()
         
+        logger.info(f"Successfully created message: id={new_message.id}, user_id={user_id}, "
+                   f"sent_by={sent_by}, event_id={event_id}")
+        
         return {
             'success': True,
             'message': new_message.to_dict()
@@ -102,6 +119,7 @@ def add_message(user_id, sent_by, message_text, required_follow_up=False, event_
         
     except Exception as e:
         db.session.rollback()
+        logger.exception(f"Exception in add_message for user_id {user_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
@@ -123,21 +141,28 @@ def get_last_n_messages(user_id, n=10):
             - count (int): Number of messages returned
             - error (str): Error message if failed
     """
+    logger.info(f"get_last_n_messages called for user_id={user_id}, n={n}")
+    
     try:
         # Verify user exists
         from services.db.users import User
+        logger.debug(f"Verifying user exists: user_id={user_id}")
         user = User.query.get(user_id)
         if not user:
+            logger.error(f"User with ID {user_id} does not exist")
             return {
                 'success': False,
                 'error': f'User with ID {user_id} does not exist'
             }
         
         # Get last n messages ordered by timestamp (most recent first)
+        logger.debug(f"Fetching last {n} messages for user_id={user_id}")
         messages = Message.query.filter_by(user_id=user_id)\
             .order_by(Message.timestamp.desc())\
             .limit(n)\
             .all()
+        
+        logger.info(f"Retrieved {len(messages)} messages for user_id={user_id}")
         
         return {
             'success': True,
@@ -146,6 +171,7 @@ def get_last_n_messages(user_id, n=10):
         }
         
     except Exception as e:
+        logger.exception(f"Exception in get_last_n_messages for user_id {user_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)

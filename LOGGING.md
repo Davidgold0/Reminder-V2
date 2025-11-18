@@ -33,6 +33,7 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 
 To see DEBUG logs in Railway:
 
+
 1. Go to your Railway project
 2. Click on your service
 3. Go to **Variables** tab

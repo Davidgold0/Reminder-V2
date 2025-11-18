@@ -39,25 +39,6 @@ def create_app():
         from services.db.users import User
         from services.db.messages import Message
         from services.db.events import Event
-        
-        # Setup WhatsApp webhook on app startup (only in production)
-        if os.environ.get('WEBHOOK_URL'):
-            try:
-                from services.messages.whatsapp_webhook import get_webhook_service
-                from config import Config
-                
-                webhook_service = get_webhook_service()
-                webhook_url = Config.WEBHOOK_URL
-                
-                print(f"Setting up WhatsApp webhook: {webhook_url}")
-                result = webhook_service.set_webhook_url(webhook_url)
-                
-                if result['success']:
-                    print(f"✓ WhatsApp webhook configured successfully")
-                else:
-                    print(f"✗ Failed to configure webhook: {result.get('error')}")
-            except Exception as e:
-                print(f"Warning: Could not setup WhatsApp webhook: {e}")
     
     # Register blueprints and services here when ready
     # Example: app.register_blueprint(some_service_blueprint)

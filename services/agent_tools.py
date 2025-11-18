@@ -19,6 +19,7 @@ def create_reminder(
 ) -> str:
     """
     Create a reminder/event for a user. Supports BOTH one-time and recurring events.
+    IMPORTANT: User must be fully registered before creating reminders.
     
     ONE-TIME EVENTS: Just set description and event_time
     RECURRING EVENTS: Set is_recurring=True and recurrence_frequency
@@ -43,10 +44,16 @@ def create_reminder(
         from services.db.users import get_user_by_phone
         from services.db.events import add_event
         
-        # Check if user exists - FAIL if they don't
+        # Check if user exists and is registered
         user_result = get_user_by_phone(user_phone)
         if not user_result['success']:
             return "Error: User not found. Please complete registration first by providing your name, language, and timezone."
+        
+        user = user_result['user']
+        
+        # Check if user is fully registered
+        if not user.get('is_registered'):
+            return "❌ You need to complete registration before creating reminders. Please provide your full name, preferred language, and timezone first."
         
         user_id = user_result['user']['id']
         
@@ -135,12 +142,14 @@ def get_or_create_user(
     timezone: str = "UTC"
 ) -> str:
     """
-    Get user info or create a new user if they don't exist.
-    IMPORTANT: When creating a new user, you MUST ask for and provide:
+    Complete user registration by updating their profile with full information.
+    The user already exists in the system (created on first message), this tool completes their registration.
+    
+    IMPORTANT: You MUST collect and provide ALL fields:
     - first_name (required)
     - last_name (required)
-    - language (required, e.g., 'en', 'es', 'fr')
-    - timezone (required, e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo')
+    - language (required, e.g., 'en', 'es', 'fr', 'he')
+    - timezone (required, e.g., 'America/New_York', 'Europe/London', 'Asia/Jerusalem', 'UTC')
     
     Args:
         phone: User's phone number
@@ -150,34 +159,43 @@ def get_or_create_user(
         timezone: User's timezone (REQUIRED, e.g., 'America/New_York')
     
     Returns:
-        User information
+        Registration status message
     """
     try:
-        from services.db.users import get_user_by_phone, add_user
+        from services.db.users import get_user_by_phone, update_user
         
-        # Try to get user
+        # Get user (should always exist now)
         result = get_user_by_phone(phone)
         
-        if result['success']:
-            user = result['user']
-            return f"User found: {user['first_name']} {user['last_name']} (Language: {user['language']}, Timezone: {user['timezone']})"
-        else:
-            # Create new user - ALL fields are now required
-            create_result = add_user(
-                first_name=first_name,
-                last_name=last_name,
-                phone_number=phone,
-                language=language,
-                timezone=timezone
-            )
-            if create_result['success']:
-                user = create_result['user']
-                return f"✓ New user registered: {user['first_name']} {user['last_name']} (Language: {language}, Timezone: {timezone})"
+        if not result['success']:
+            return "Error: User not found. Please contact support."
+        
+        user = result['user']
+        
+        # Check if already registered
+        if user.get('is_registered'):
+            return f"User already registered: {user['first_name']} {user['last_name']} (Language: {user['language']}, Timezone: {user['timezone']})"
+        
+        # Update user with full registration info
+        update_result = update_user(
+            phone_number=phone,
+            first_name=first_name,
+            last_name=last_name,
+            language=language,
+            timezone=timezone
+        )
+        
+        if update_result['success']:
+            user = update_result['user']
+            if user['is_registered']:
+                return f"✅ Registration complete! Welcome {first_name} {last_name}! You can now create reminders. (Language: {language}, Timezone: {timezone})"
             else:
-                return f"Error: {create_result['error']}"
+                return f"Profile updated but missing some information. Please provide all required details."
+        else:
+            return f"Error: {update_result['error']}"
                 
     except Exception as e:
-        return f"Error with user: {str(e)}"
+        return f"Error with user registration: {str(e)}"
 
 
 @tool

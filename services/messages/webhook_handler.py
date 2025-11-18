@@ -67,7 +67,7 @@ def handle_webhook():
 def process_incoming_message(phone: str, message_text: str) -> dict:
     """
     Process an incoming message from a user.
-    Checks if user exists, saves message to DB, and gets AI response.
+    Ensures user exists (creates if needed), saves message to DB, and gets AI response.
     
     Args:
         phone: Phone number of the sender
@@ -77,34 +77,39 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
         dict: Processing result with success status and reply
     """
     try:
-        from services.db.users import get_user_by_phone
+        from services.db.users import get_user_by_phone, add_user
         from services.db.messages import add_message
         from services.agent import get_agent
         from services.agent_tools import AGENT_TOOLS
         
-        # Check if user exists
+        # Check if user exists, create if not
         user_result = get_user_by_phone(phone)
         
-        user_id = None
-        user_full_name = None
-        user_language = "en"
-        user_timezone = "UTC"
+        if not user_result['success']:
+            # User doesn't exist - create a partial user record
+            create_result = add_user(phone_number=phone)
+            if not create_result['success']:
+                return {
+                    'success': False,
+                    'error': f"Failed to create user: {create_result['error']}",
+                    'reply': "I apologize, but I encountered an error. Please try again."
+                }
+            user_result = create_result
         
-        if user_result['success']:
-            # Existing user - get their info
-            user = user_result['user']
-            user_id = user['id']
-            user_full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
-            user_language = user.get('language', 'en')
-            user_timezone = user.get('timezone', 'UTC')
-            
-            # Save incoming message to database
-            add_message(
-                user_id=user_id,
-                sent_by='user',
-                message_text=message_text,
-                required_follow_up=False
-            )
+        # Get user info
+        user = user_result['user']
+        user_id = user['id']
+        user_full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or None
+        user_language = user.get('language') or 'en'
+        user_timezone = user.get('timezone') or 'UTC'
+        
+        # Save incoming message to database (now we always have a user_id)
+        add_message(
+            user_id=user_id,
+            sent_by='user',
+            message_text=message_text,
+            required_follow_up=False
+        )
         
         # Get agent and process message
         agent = get_agent(tools=AGENT_TOOLS)
@@ -117,14 +122,13 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
             user_timezone=user_timezone
         )
         
-        # Save AI response to database if user exists
-        if user_id:
-            add_message(
-                user_id=user_id,
-                sent_by='ai',
-                message_text=response_text,
-                required_follow_up=False
-            )
+        # Save AI response to database (we always have user_id now)
+        add_message(
+            user_id=user_id,
+            sent_by='ai',
+            message_text=response_text,
+            required_follow_up=False
+        )
         
         return {
             'success': True,

@@ -76,6 +76,8 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
     Returns:
         dict: Processing result with success status and reply
     """
+    from main import db
+    
     try:
         from services.db.users import get_user_by_phone, add_user
         from services.db.messages import add_message
@@ -138,6 +140,11 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
         
     except Exception as e:
         print(f"Error processing message: {e}")
+        # Rollback the session on error to prevent stale transactions
+        try:
+            db.session.rollback()
+        except:
+            pass
         return {
             'success': False,
             'error': str(e),

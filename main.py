@@ -71,6 +71,20 @@ def create_app():
     
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
+    # Database connection pool settings to prevent connection timeout issues
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 10,                    # Number of connections to keep open
+        'pool_recycle': 3600,               # Recycle connections after 1 hour
+        'pool_pre_ping': True,              # Test connections before using them
+        'max_overflow': 20,                 # Max additional connections beyond pool_size
+        'pool_timeout': 30,                 # Timeout for getting connection from pool
+        'connect_args': {
+            'connect_timeout': 10,          # Connection timeout in seconds
+        }
+    }
+    
+    logger.info("Database configuration completed with connection pooling")
+    
     # Initialize extensions
     db.init_app(app)
     
@@ -79,6 +93,31 @@ def create_app():
         from services.db.users import User
         from services.db.messages import Message
         from services.db.events import Event
+    
+    # Register error handlers and teardown functions
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        """
+        Remove database sessions at the end of the request or when the application shuts down.
+        This ensures proper cleanup and prevents stale connections.
+        """
+        if exception:
+            logger.warning(f"Request ended with exception, rolling back session: {exception}")
+            db.session.rollback()
+        try:
+            db.session.remove()
+        except Exception as e:
+            logger.error(f"Error removing session: {e}")
+    
+    @app.before_request
+    def before_request():
+        """Ensure we have a clean database session before each request"""
+        try:
+            # Try to ping the database to ensure connection is alive
+            db.session.execute(db.text('SELECT 1'))
+        except Exception as e:
+            logger.warning(f"Database connection issue before request, rolling back: {e}")
+            db.session.rollback()
     
     # Register blueprints and services here when ready
     # Example: app.register_blueprint(some_service_blueprint)

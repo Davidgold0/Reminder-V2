@@ -1,8 +1,21 @@
-# Logging Configuration
+# Logging & Database Configuration
 
 ## Overview
 
 The application now has comprehensive logging configured across all modules. Logs are written to stdout (console) which makes them visible in Railway's log viewer.
+
+## Database Connection Issues (Fixed)
+
+If you see errors like:
+- `Lost connection to MySQL server during query`
+- `Can't reconnect until invalid transaction is rolled back`
+- `ValueError: read of closed file`
+
+These have been fixed with:
+1. **Connection pooling** with pre-ping to test connections before use
+2. **Automatic session cleanup** after each request
+3. **Connection recycling** every hour to prevent stale connections
+4. **Proper error handling** with automatic rollback on failures
 
 ## Configuration
 

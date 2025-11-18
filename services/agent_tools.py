@@ -2,7 +2,7 @@
 Tools for the AI agent to interact with the reminder system.
 These tools give the agent capabilities to manage users, events, and messages.
 """
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 from typing import Optional
 from datetime import datetime
 import json
@@ -14,22 +14,23 @@ logger = logging.getLogger(__name__)
 
 @tool
 def create_reminder(
-    user_phone: str,
     description: str,
     event_time: str,
     is_recurring: bool = False,
     recurrence_frequency: Optional[str] = None,
-    recurrence_days_of_week: Optional[str] = None
+    recurrence_days_of_week: Optional[str] = None,
+    runtime: ToolRuntime = None
 ) -> str:
     """
     Create a reminder/event for a user. Supports BOTH one-time and recurring events.
     IMPORTANT: User must be fully registered before creating reminders.
     
+    The user's phone number is automatically retrieved from the agent state - you don't need to provide it.
+    
     ONE-TIME EVENTS: Just set description and event_time
     RECURRING EVENTS: Set is_recurring=True and recurrence_frequency
     
     Args:
-        user_phone: User's phone number
         description: What to remind about
         event_time: When to send the reminder (ISO format: YYYY-MM-DD HH:MM:SS)
         is_recurring: Set to True for recurring events (default: False)
@@ -37,21 +38,27 @@ def create_reminder(
         recurrence_days_of_week: For weekly recurring - which days (e.g., "1,3,5" for Mon,Wed,Fri where 0=Monday, 6=Sunday)
     
     Examples:
-        - One-time: create_reminder(phone, "Doctor appointment", "2025-11-20 14:00:00")
-        - Daily: create_reminder(phone, "Take medicine", "2025-11-15 09:00:00", True, "daily")
-        - Weekly: create_reminder(phone, "Team meeting", "2025-11-18 10:00:00", True, "weekly", "0")  # Every Monday
+        - One-time: create_reminder("Doctor appointment", "2025-11-20 14:00:00")
+        - Daily: create_reminder("Take medicine", "2025-11-15 09:00:00", True, "daily")
+        - Weekly: create_reminder("Team meeting", "2025-11-18 10:00:00", True, "weekly", "0")  # Every Monday
     
     Returns:
         Success message or error
     """
+    from services.db.users import get_user_by_phone
+    from services.db.events import add_event
+    
+    # Get phone number from agent state
+    user_phone = runtime.state.get("user_phone")
+    if not user_phone:
+        logger.error("user_phone not found in agent state")
+        return "Error: Unable to retrieve user phone number from system."
+    
     logger.info(f"create_reminder called for user_phone={user_phone}, is_recurring={is_recurring}")
     logger.debug(f"Reminder details: description='{description}', event_time='{event_time}', "
                  f"recurrence_frequency={recurrence_frequency}, recurrence_days_of_week={recurrence_days_of_week}")
     
     try:
-        from services.db.users import get_user_by_phone
-        from services.db.events import add_event
-        
         # Check if user exists and is registered
         logger.debug(f"Fetching user by phone: {user_phone}")
         user_result = get_user_by_phone(user_phone)
@@ -106,23 +113,30 @@ def create_reminder(
 
 
 @tool
-def get_user_reminders(user_phone: str, limit: int = 10) -> str:
+def get_user_reminders(limit: int = 10, runtime: ToolRuntime = None) -> str:
     """
     Get upcoming reminders for a user.
     
+    The user's phone number is automatically retrieved from the agent state - you don't need to provide it.
+    
     Args:
-        user_phone: User's phone number
         limit: Maximum number of reminders to return
     
     Returns:
         List of upcoming reminders
     """
+    from services.db.users import get_user_by_phone
+    from services.db.events import get_upcoming_events
+    
+    # Get phone number from agent state
+    user_phone = runtime.state.get("user_phone")
+    if not user_phone:
+        logger.error("user_phone not found in agent state")
+        return "Error: Unable to retrieve user phone number from system."
+    
     logger.info(f"get_user_reminders called for user_phone={user_phone}, limit={limit}")
     
     try:
-        from services.db.users import get_user_by_phone
-        from services.db.events import get_upcoming_events
-        
         # Get user
         logger.debug(f"Fetching user by phone: {user_phone}")
         user_result = get_user_by_phone(user_phone)
@@ -165,15 +179,17 @@ def get_user_reminders(user_phone: str, limit: int = 10) -> str:
 
 @tool
 def get_or_create_user(
-    phone: str, 
     first_name: str,
     last_name: str,
     language: str = "en",
-    timezone: str = "UTC"
+    timezone: str = "UTC",
+    runtime: ToolRuntime = None
 ) -> str:
     """
     Complete user registration by updating their profile with full information.
     The user already exists in the system (created on first message), this tool completes their registration.
+    
+    The user's phone number is automatically retrieved from the agent state - you don't need to provide it.
     
     IMPORTANT: You MUST collect and provide ALL fields:
     - first_name (required)
@@ -182,7 +198,6 @@ def get_or_create_user(
     - timezone (required, e.g., 'America/New_York', 'Europe/London', 'Asia/Jerusalem', 'UTC')
     
     Args:
-        phone: User's phone number
         first_name: User's first name (REQUIRED)
         last_name: User's last name (REQUIRED)
         language: User's preferred language code (REQUIRED)
@@ -191,12 +206,18 @@ def get_or_create_user(
     Returns:
         Registration status message
     """
+    from services.db.users import get_user_by_phone, update_user
+    
+    # Get phone number from agent state
+    phone = runtime.state.get("user_phone")
+    if not phone:
+        logger.error("user_phone not found in agent state")
+        return "Error: Unable to retrieve user phone number from system."
+    
     logger.info(f"get_or_create_user called for phone={phone}, first_name={first_name}, last_name={last_name}")
     logger.debug(f"Registration details: language={language}, timezone={timezone}")
     
     try:
-        from services.db.users import get_user_by_phone, update_user
-        
         # Get user (should always exist now)
         logger.debug(f"Fetching user by phone: {phone}")
         result = get_user_by_phone(phone)
@@ -241,23 +262,30 @@ def get_or_create_user(
 
 
 @tool
-def send_whatsapp_message(phone: str, message: str) -> str:
+def send_whatsapp_message(message: str, runtime: ToolRuntime = None) -> str:
     """
     Send a WhatsApp message to a user.
     
+    The user's phone number is automatically retrieved from the agent state - you don't need to provide it.
+    
     Args:
-        phone: Recipient's phone number
         message: Message to send
     
     Returns:
         Success or error message
     """
+    from services.messages.whatsapp_client import get_whatsapp_client
+    
+    # Get phone number from agent state
+    phone = runtime.state.get("user_phone")
+    if not phone:
+        logger.error("user_phone not found in agent state")
+        return "Error: Unable to retrieve user phone number from system."
+    
     logger.info(f"send_whatsapp_message called for phone={phone}")
     logger.debug(f"Message content (first 100 chars): {message[:100]}...")
     
     try:
-        from services.messages.whatsapp_client import get_whatsapp_client
-        
         logger.debug("Getting WhatsApp client")
         client = get_whatsapp_client()
         result = client.send_message(phone=phone, message=message)
@@ -310,24 +338,31 @@ def confirm_reminder(event_id: int) -> str:
 
 
 @tool
-def get_last_messages(user_id: int, n: int = 20) -> str:
+def get_last_messages(n: int = 20, runtime: ToolRuntime = None) -> str:
     """
     Retrieve the last N messages exchanged with a user.
     Use this tool when you need MORE conversation history beyond the automatic 10 messages provided.
     This is helpful for understanding context from earlier in the conversation.
     
+    The user's ID is automatically retrieved from the agent state - you don't need to provide it.
+    
     Args:
-        user_id: The user's ID (available in your state)
         n: Number of recent messages to retrieve (default: 20, can go higher if needed)
     
     Returns:
         Formatted list of recent messages with timestamps or error
     """
+    from services.db.messages import get_last_n_messages
+    
+    # Get user_id from agent state
+    user_id = runtime.state.get("user_id")
+    if not user_id:
+        logger.error("user_id not found in agent state")
+        return "Error: Unable to retrieve user ID from system."
+    
     logger.info(f"get_last_messages called for user_id={user_id}, n={n}")
     
     try:
-        from services.db.messages import get_last_n_messages
-        
         logger.debug(f"Fetching last {n} messages for user_id={user_id}")
         result = get_last_n_messages(user_id, n)
         
@@ -366,24 +401,31 @@ def get_last_messages(user_id: int, n: int = 20) -> str:
 
 
 @tool
-def get_upcoming_reminders(user_id: int, limit: int = 20) -> str:
+def get_upcoming_reminders(limit: int = 20, runtime: ToolRuntime = None) -> str:
     """
     Get upcoming events/reminders for a user.
     Shows events ordered by time, including confirmation status.
     
+    The user's ID is automatically retrieved from the agent state - you don't need to provide it.
+    
     Args:
-        user_id: The user's ID
         limit: Maximum number of events to retrieve (default: 20)
     
     Returns:
         Formatted list of upcoming events or error
     """
+    from services.db.events import get_upcoming_events
+    from datetime import datetime
+    
+    # Get user_id from agent state
+    user_id = runtime.state.get("user_id")
+    if not user_id:
+        logger.error("user_id not found in agent state")
+        return "Error: Unable to retrieve user ID from system."
+    
     logger.info(f"get_upcoming_reminders called for user_id={user_id}, limit={limit}")
     
     try:
-        from services.db.events import get_upcoming_events
-        from datetime import datetime
-        
         logger.debug(f"Fetching upcoming events for user_id={user_id}")
         result = get_upcoming_events(user_id, limit=limit)
         

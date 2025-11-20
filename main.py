@@ -73,13 +73,16 @@ def create_app():
     
     # Database connection pool settings to prevent connection timeout issues
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': 10,                    # Number of connections to keep open
-        'pool_recycle': 3600,               # Recycle connections after 1 hour
-        'pool_pre_ping': True,              # Test connections before using them
-        'max_overflow': 20,                 # Max additional connections beyond pool_size
+        'pool_size': 5,                     # Reduced - fewer persistent connections
+        'pool_recycle': 1800,               # Recycle connections after 30 minutes
+        'pool_pre_ping': True,              # CRITICAL: Test connections before using
+        'max_overflow': 10,                 # Reduced overflow connections
         'pool_timeout': 30,                 # Timeout for getting connection from pool
+        'echo_pool': False,                 # Don't log pool events (reduces overhead)
         'connect_args': {
             'connect_timeout': 10,          # Connection timeout in seconds
+            'read_timeout': 30,             # Read timeout
+            'write_timeout': 30,            # Write timeout
         }
     }
     

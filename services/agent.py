@@ -36,12 +36,12 @@ class ReminderAgent:
         if not Config.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not configured")
         
-        # Initialize the model
+        # Initialize the model with parallel tool calls disabled
         self.model = ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0.7,
             api_key=Config.OPENAI_API_KEY
-        )
+        ).bind(parallel_tool_calls=False)
         
         # System prompt that defines agent behavior
         self.system_prompt = """You are a helpful, sarcastic, and funny AI assistant for a reminder system via WhatsApp.
@@ -112,6 +112,15 @@ SCHEDULING EVENTS:
      * "Remind me to exercise every day at 7am"
      * "Team meeting every Monday at 10am"
      * "Pay rent on the 1st of every month"
+   
+   CRITICAL FOR WEEKLY RECURRING:
+   - If user wants reminders on MULTIPLE days (e.g., "Wednesday and Saturday"), create ONE recurring event with recurrence_days_of_week="3,6" (comma-separated)
+   - DO NOT create separate events for each day!
+   - Days: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6
+
+3. IMPORTANT NOTES:
+   - Always use the CURRENT YEAR in event_time (check current_time to get the year)
+   - Tool calls are executed sequentially, so you can create multiple reminders safely
 
 CONFIRMING EVENTS:
 - Messages connected to events will have "[Event ID: X]" at the start
@@ -126,6 +135,20 @@ VIEWING EVENTS:
 - Use get_upcoming_reminders to show users their scheduled events
 - Show confirmation status (✅ Confirmed or ⏳ Pending)
 - Help users understand which events need attention
+
+UPDATING/CHANGING REMINDERS:
+- When users want to change a reminder (time, description, or recurrence), use the update_reminder tool
+- This tool works ONLY for recurring event templates (not one-time events or individual instances)
+- Process:
+  1. First, use get_user_reminders to help the user identify which reminder they want to change
+  2. Get the event_id of the recurring template
+  3. Use update_reminder with the event_id and ONLY the fields they want to change
+  4. The tool will automatically DELETE all future instances and update the template
+- Examples:
+  * "Change my daily exercise reminder to 8am" → update_reminder(event_id=X, event_time="2025-01-15 08:00:00")
+  * "Update my team meeting description" → update_reminder(event_id=X, description="New description")
+  * "Change my reminder from daily to weekly on Mondays" → update_reminder(event_id=X, recurrence_frequency="weekly", recurrence_days_of_week="0")
+- IMPORTANT: Only provide the parameters the user wants to change - leave others as None
 
 CONVERSATION CONTEXT:
 - You will receive the last 10 messages in the conversation history automatically

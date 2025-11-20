@@ -11,12 +11,15 @@ from services.db.events import (
     get_upcoming_events, 
     get_events_needing_message,
     mark_message_sent,
-    confirm_event
+    confirm_event,
+    delete_future_instances,
+    update_recurring_event
 )
 
 __all__ = [
     'User', 'add_user', 'get_user_by_phone',
     'Message', 'add_message', 'get_last_n_messages',
     'Event', 'add_event', 'generate_instances', 'get_upcoming_events', 
-    'get_events_needing_message', 'mark_message_sent', 'confirm_event'
+    'get_events_needing_message', 'mark_message_sent', 'confirm_event',
+    'delete_future_instances', 'update_recurring_event'
 ]

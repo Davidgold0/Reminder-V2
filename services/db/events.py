@@ -147,7 +147,13 @@ def add_event(user_id, description, event_time, is_recurring=False,
         }
         
     except Exception as e:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            # Force close the session to prevent connection corruption
+            db.session.close()
+        
         logger.exception(f"Exception in add_event for user_id {user_id}: {str(e)}")
         return {
             'success': False,
@@ -287,7 +293,12 @@ def generate_instances(event_id, start_date, end_date):
         }
         
     except Exception as e:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
         logger.exception(f"Exception in generate_instances for event_id {event_id}: {str(e)}")
         return {
             'success': False,
@@ -460,7 +471,12 @@ def mark_message_sent(event_id):
         }
         
     except Exception as e:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
         logger.exception(f"Exception in mark_message_sent for event_id {event_id}: {str(e)}")
         return {
             'success': False,
@@ -507,9 +523,147 @@ def confirm_event(event_id: int) -> dict:
         }
         
     except Exception as e:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
         logger.exception(f"Exception in confirm_event for event_id {event_id}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
         }
+
+
+def delete_future_instances(parent_event_id: int) -> dict:
+    """
+    Delete all future instances of a recurring event (instances that haven't happened yet).
+    Used when modifying a recurring event.
+    
+    Args:
+        parent_event_id: ID of the parent recurring event template
+        
+    Returns:
+        dict: Result with success status and count of deleted instances
+    """
+    logger.info(f"delete_future_instances called for parent_event_id={parent_event_id}")
+    
+    try:
+        # Get current time
+        now = datetime.utcnow()
+        
+        # Find all future instances of this parent event
+        future_instances = Event.query.filter(
+            Event.parent_event_id == parent_event_id,
+            Event.event_time >= now
+        ).all()
+        
+        count = len(future_instances)
+        logger.debug(f"Found {count} future instances to delete for parent_event_id={parent_event_id}")
+        
+        # Delete them
+        for instance in future_instances:
+            db.session.delete(instance)
+        
+        db.session.commit()
+        
+        logger.info(f"Successfully deleted {count} future instances for parent_event_id={parent_event_id}")
+        
+        return {
+            'success': True,
+            'deleted_count': count,
+            'message': f'Deleted {count} future instance(s)'
+        }
+        
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
+        logger.exception(f"Exception in delete_future_instances for parent_event_id {parent_event_id}: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def update_recurring_event(event_id: int, description: str = None, event_time: datetime = None,
+                          recurrence_frequency: str = None, recurrence_days_of_week: str = None) -> dict:
+    """
+    Update a recurring event template.
+    
+    Args:
+        event_id: ID of the recurring event template to update
+        description: New description (optional)
+        event_time: New event time (optional)
+        recurrence_frequency: New frequency (optional)
+        recurrence_days_of_week: New days of week (optional)
+        
+    Returns:
+        dict: Result with success status and updated event details
+    """
+    logger.info(f"update_recurring_event called for event_id={event_id}")
+    
+    try:
+        # Get the event
+        logger.debug(f"Fetching event: event_id={event_id}")
+        event = Event.query.get(event_id)
+        
+        if not event:
+            logger.error(f"Event with ID {event_id} does not exist")
+            return {
+                'success': False,
+                'error': f'Event with ID {event_id} does not exist'
+            }
+        
+        if not event.is_recurring or event.parent_event_id is not None:
+            logger.error(f"Event {event_id} is not a recurring template")
+            return {
+                'success': False,
+                'error': 'Event is not a recurring template. Can only update recurring templates.'
+            }
+        
+        # Update fields if provided
+        updated_fields = []
+        if description is not None:
+            event.description = description
+            updated_fields.append('description')
+        if event_time is not None:
+            event.event_time = event_time
+            updated_fields.append('event_time')
+        if recurrence_frequency is not None:
+            event.recurrence_frequency = recurrence_frequency
+            updated_fields.append('recurrence_frequency')
+        if recurrence_days_of_week is not None:
+            event.recurrence_days_of_week = recurrence_days_of_week
+            updated_fields.append('recurrence_days_of_week')
+        
+        event.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        logger.info(f"Successfully updated recurring event: event_id={event_id}, fields={updated_fields}")
+        
+        return {
+            'success': True,
+            'event': event.to_dict(),
+            'updated_fields': updated_fields,
+            'message': f'Successfully updated {", ".join(updated_fields)}'
+        }
+        
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
+        logger.exception(f"Exception in update_recurring_event for event_id {event_id}: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+

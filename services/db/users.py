@@ -105,7 +105,12 @@ def add_user(phone_number, first_name=None, last_name=None, timezone=None, langu
         }
         
     except Exception as e:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
         logger.exception(f"Exception in add_user for phone {phone_number}: {str(e)}")
         return {
             'success': False,
@@ -182,7 +187,12 @@ def update_user(phone_number, first_name=None, last_name=None, timezone=None, la
         }
         
     except Exception as e:
-        db.session.rollback()
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed after exception: {rollback_error}")
+            db.session.close()
+        
         logger.exception(f"Exception in update_user for phone {phone_number}: {str(e)}")
         return {
             'success': False,
@@ -222,6 +232,12 @@ def get_user_by_phone(phone_number):
             }
             
     except Exception as e:
+        # Close session on read errors to prevent connection corruption
+        try:
+            db.session.close()
+        except Exception:
+            pass
+        
         logger.exception(f"Exception in get_user_by_phone for phone {phone_number}: {str(e)}")
         return {
             'success': False,

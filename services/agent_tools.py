@@ -338,6 +338,82 @@ def confirm_reminder(event_id: int) -> str:
 
 
 @tool
+def update_reminder(
+    event_id: int,
+    description: Optional[str] = None,
+    event_time: Optional[str] = None,
+    recurrence_frequency: Optional[str] = None,
+    recurrence_days_of_week: Optional[str] = None,
+    runtime: ToolRuntime = None
+) -> str:
+    """
+    Update an existing recurring reminder. This will DELETE all future instances and update the template.
+    Use this when the user wants to change the time, description, or recurrence pattern of an existing reminder.
+    
+    IMPORTANT: This only works for recurring event TEMPLATES (the original event that generates instances).
+    To find the template ID, use get_user_reminders to see all reminders and their IDs.
+    
+    Args:
+        event_id: ID of the recurring event template to update
+        description: New description (optional - only updates if provided)
+        event_time: New time for the reminder (ISO format: YYYY-MM-DD HH:MM:SS, optional)
+        recurrence_frequency: New frequency - 'daily', 'weekly', 'monthly', 'yearly' (optional)
+        recurrence_days_of_week: New days for weekly recurrence (e.g., "1,3,5", optional)
+    
+    Returns:
+        Success message with details of what was updated, or error message
+    """
+    from services.db.events import delete_future_instances, update_recurring_event
+    from datetime import datetime
+    
+    logger.info(f"update_reminder called for event_id={event_id}")
+    
+    try:
+        # First, delete all future instances
+        logger.debug(f"Deleting future instances for event_id={event_id}")
+        delete_result = delete_future_instances(event_id)
+        
+        if not delete_result['success']:
+            logger.error(f"Failed to delete future instances for event_id={event_id}: {delete_result['error']}")
+            return f"Error deleting future instances: {delete_result['error']}"
+        
+        deleted_count = delete_result['deleted_count']
+        logger.info(f"Deleted {deleted_count} future instances for event_id={event_id}")
+        
+        # Parse event_time if provided
+        parsed_event_time = None
+        if event_time:
+            try:
+                parsed_event_time = datetime.fromisoformat(event_time)
+                logger.debug(f"Parsed event_time: {parsed_event_time}")
+            except ValueError as ve:
+                logger.error(f"Invalid event_time format: {event_time}")
+                return f"Error: Invalid time format. Use YYYY-MM-DD HH:MM:SS"
+        
+        # Update the recurring event template
+        logger.debug(f"Updating recurring event template: event_id={event_id}")
+        update_result = update_recurring_event(
+            event_id=event_id,
+            description=description,
+            event_time=parsed_event_time,
+            recurrence_frequency=recurrence_frequency,
+            recurrence_days_of_week=recurrence_days_of_week
+        )
+        
+        if update_result['success']:
+            updated_fields = update_result['updated_fields']
+            logger.info(f"Successfully updated event {event_id}: {updated_fields}")
+            return f"✓ Reminder updated! Deleted {deleted_count} future instance(s). Updated: {', '.join(updated_fields)}. New instances will be generated with the updated settings."
+        else:
+            logger.error(f"Failed to update event {event_id}: {update_result['error']}")
+            return f"Error updating reminder: {update_result['error']}"
+            
+    except Exception as e:
+        logger.exception(f"Exception in update_reminder for event_id {event_id}: {str(e)}")
+        return f"Error: {str(e)}"
+
+
+@tool
 def get_last_messages(n: int = 20, runtime: ToolRuntime = None) -> str:
     """
     Retrieve the last N messages exchanged with a user.
@@ -469,6 +545,7 @@ AGENT_TOOLS = [
     get_or_create_user,
     send_whatsapp_message,
     confirm_reminder,
+    update_reminder,
     get_last_messages,
     get_upcoming_reminders
 ]

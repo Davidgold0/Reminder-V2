@@ -6,6 +6,7 @@ Part 2: Sends escalating follow-up reminders for events that were already messag
 import os
 import sys
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,20 +31,31 @@ def send_initial_reminders():
     
     with app.app_context():
         try:
-            # Get current time and 30 minutes from now
+            # Get current time (UTC)
             now = datetime.utcnow()
             thirty_min_from_now = now + timedelta(minutes=30)
             
-            # Query for unconfirmed events in the next 30 minutes that haven't been messaged yet
-            upcoming_events = Event.query.filter(
+            # Query for unconfirmed events that haven't been messaged yet
+            # We'll filter by time in Python since events are stored in user's local timezone
+            candidate_events = Event.query.filter(
                 Event.is_confirmed == False,
                 Event.is_message_sent == False,
-                Event.event_time >= now,
-                Event.event_time <= thirty_min_from_now,
                 Event.parent_event_id != None  # Only instances, not templates
             ).all()
             
-            print(f"Found {len(upcoming_events)} events needing initial reminders\n")
+            # Filter events that are 30 minutes away (in their user's timezone converted to UTC)
+            upcoming_events = []
+            for event in candidate_events:
+                user_tz = ZoneInfo(event.user.timezone or 'UTC')
+                # Event time is stored as naive datetime in user's timezone
+                event_time_user_tz = event.event_time.replace(tzinfo=user_tz)
+                event_time_utc = event_time_user_tz.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+                
+                # Check if event is in the next 30 minutes
+                if now <= event_time_utc <= thirty_min_from_now:
+                    upcoming_events.append(event)
+            
+            print(f"Found {len(upcoming_events)} events needing initial reminders (out of {len(candidate_events)} candidates)\n")
             
             whatsapp_client = get_whatsapp_client()
             
@@ -60,8 +72,14 @@ def send_initial_reminders():
                     user = event.user
                     user_full_name = f"{user.first_name} {user.last_name}".strip()
                     
+                    # Convert event time from user's timezone to UTC for comparison
+                    user_tz = ZoneInfo(user.timezone or 'UTC')
+                    # Event time is stored as naive datetime in user's timezone
+                    event_time_user_tz = event.event_time.replace(tzinfo=user_tz)
+                    event_time_utc = event_time_user_tz.astimezone(ZoneInfo('UTC'))
+                    
                     # Create prompt for model to generate reminder
-                    time_until = event.event_time - now
+                    time_until = event_time_utc.replace(tzinfo=None) - now
                     minutes_until = int(time_until.total_seconds() / 60)
                     user_language = user.language or 'en'
                     
@@ -131,20 +149,31 @@ def send_escalating_reminders():
             from services.db.messages import Message
             from sqlalchemy import func
             
-            # Get current time and 2 hours ago
+            # Get current time (UTC) and 2 hours ago
             now = datetime.utcnow()
             two_hours_ago = now - timedelta(hours=2)
             
-            # Query for unconfirmed events that had messages sent in the last 2 hours
-            events_with_messages = Event.query.filter(
+            # Query for unconfirmed events that had messages sent
+            # We'll filter by time in Python since events are stored in user's local timezone
+            candidate_events = Event.query.filter(
                 Event.is_confirmed == False,
                 Event.is_message_sent == True,
-                Event.event_time >= two_hours_ago,
-                Event.event_time <= now,
                 Event.parent_event_id != None  # Only instances, not templates
             ).all()
             
-            print(f"Found {len(events_with_messages)} events with previous messages\n")
+            # Filter events where event time was in the last 2 hours (in UTC)
+            events_with_messages = []
+            for event in candidate_events:
+                user_tz = ZoneInfo(event.user.timezone or 'UTC')
+                # Event time is stored as naive datetime in user's timezone
+                event_time_user_tz = event.event_time.replace(tzinfo=user_tz)
+                event_time_utc = event_time_user_tz.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+                
+                # Check if event time was in the last 2 hours
+                if two_hours_ago <= event_time_utc <= now:
+                    events_with_messages.append(event)
+            
+            print(f"Found {len(events_with_messages)} events with previous messages (out of {len(candidate_events)} candidates)\n")
             
             whatsapp_client = get_whatsapp_client()
             
@@ -157,16 +186,28 @@ def send_escalating_reminders():
             
             for event in events_with_messages:
                 try:
-                    # Count how many messages were sent for this event
-                    message_count = Message.query.filter(
+                    # Get all messages for this event to check count and timing
+                    event_messages = Message.query.filter(
                         Message.event_id == event.id,
                         Message.sent_by == 'ai'
-                    ).count()
+                    ).order_by(Message.created_at.desc()).all()
+                    
+                    message_count = len(event_messages)
                     
                     # Skip if we've already sent 5 messages (n=5 is the max)
                     if message_count >= 5:
                         print(f"⊗ Event {event.id} already has {message_count} messages, skipping")
                         continue
+                    
+                    # Check if enough time has passed since the last message (at least 30 minutes)
+                    if event_messages:
+                        last_message = event_messages[0]  # Most recent
+                        time_since_last_message = now - last_message.created_at
+                        minutes_since_last = int(time_since_last_message.total_seconds() / 60)
+                        
+                        if minutes_since_last < 30:
+                            print(f"⊗ Event {event.id}: Only {minutes_since_last} minutes since last message, skipping")
+                            continue
                     
                     # This will be message n (where n starts at 2 since first was already sent)
                     message_number = message_count + 1
@@ -175,8 +216,14 @@ def send_escalating_reminders():
                     user = event.user
                     user_full_name = f"{user.first_name} {user.last_name}".strip()
                     
+                    # Convert event time from user's timezone to UTC for comparison
+                    user_tz = ZoneInfo(user.timezone or 'UTC')
+                    # Event time is stored as naive datetime in user's timezone
+                    event_time_user_tz = event.event_time.replace(tzinfo=user_tz)
+                    event_time_utc = event_time_user_tz.astimezone(ZoneInfo('UTC'))
+                    
                     # Calculate time since event
-                    time_since = now - event.event_time
+                    time_since = now - event_time_utc.replace(tzinfo=None)
                     minutes_since = int(time_since.total_seconds() / 60)
                     user_language = user.language or 'en'
                     

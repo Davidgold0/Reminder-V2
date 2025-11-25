@@ -14,8 +14,8 @@ from main import create_app
 from services.db.events import Event, mark_message_sent
 from services.db.messages import add_message
 from services.messages.whatsapp_client import get_whatsapp_client
-from services.agent import get_agent
-from services.agent_tools import AGENT_TOOLS
+from langchain_openai import ChatOpenAI
+from config import Config
 
 
 def send_initial_reminders():
@@ -46,7 +46,13 @@ def send_initial_reminders():
             print(f"Found {len(upcoming_events)} events needing initial reminders\n")
             
             whatsapp_client = get_whatsapp_client()
-            agent = get_agent(tools=AGENT_TOOLS)
+            
+            # Initialize simple ChatOpenAI model (no tools, no system prompt)
+            model = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0.9,
+                api_key=Config.OPENAI_API_KEY
+            )
             
             for event in upcoming_events:
                 try:
@@ -54,27 +60,24 @@ def send_initial_reminders():
                     user = event.user
                     user_full_name = f"{user.first_name} {user.last_name}".strip()
                     
-                    # Create prompt for agent to generate reminder
+                    # Create prompt for model to generate reminder
                     time_until = event.event_time - now
                     minutes_until = int(time_until.total_seconds() / 60)
+                    user_language = user.language or 'en'
                     
                     prompt = f"""Generate a sarcastic, funny, and SHORT reminder message for this event:
 Event: {event.description}
 Time: {event.event_time.isoformat()} (in {minutes_until} minutes)
 User's name: {user_full_name}
+Language: {user_language}
 
+IMPORTANT: Write the ENTIRE message in {user_language} language!
 This is the FIRST reminder (n=1). Be playful but not too harsh yet.
 Keep it under 2 sentences. Make it funny and sarcastic."""
                     
-                    # Get AI-generated message
-                    reminder_text = agent.process_message(
-                        phone=user.phone_number,
-                        message=prompt,
-                        user_id=user.id,
-                        user_full_name=user_full_name,
-                        user_language=user.language,
-                        user_timezone=user.timezone
-                    )
+                    # Get AI-generated message using simple model invocation
+                    response = model.invoke(prompt)
+                    reminder_text = response.content
                     
                     # Send via WhatsApp
                     result = whatsapp_client.send_message(
@@ -144,7 +147,13 @@ def send_escalating_reminders():
             print(f"Found {len(events_with_messages)} events with previous messages\n")
             
             whatsapp_client = get_whatsapp_client()
-            agent = get_agent(tools=AGENT_TOOLS)
+            
+            # Initialize simple ChatOpenAI model (no tools, no system prompt)
+            model = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0.9,
+                api_key=Config.OPENAI_API_KEY
+            )
             
             for event in events_with_messages:
                 try:
@@ -169,6 +178,7 @@ def send_escalating_reminders():
                     # Calculate time since event
                     time_since = now - event.event_time
                     minutes_since = int(time_since.total_seconds() / 60)
+                    user_language = user.language or 'en'
                     
                     # Create escalating prompt based on message number
                     anger_levels = {
@@ -182,20 +192,16 @@ def send_escalating_reminders():
 Event: {event.description}
 Time: {event.event_time.isoformat()} (was {minutes_since} minutes ago)
 User's name: {user_full_name}
+Language: {user_language}
 
+IMPORTANT: Write the ENTIRE message in {user_language} language!
 This is reminder #{message_number} (out of 5 max). The user STILL hasn't confirmed!
 Tone: {anger_levels.get(message_number, 'annoyed')}
 Keep it under 2 sentences. Be {anger_levels.get(message_number, 'annoyed')} but keep it funny and sarcastic."""
                     
-                    # Get AI-generated message
-                    reminder_text = agent.process_message(
-                        phone=user.phone_number,
-                        message=prompt,
-                        user_id=user.id,
-                        user_full_name=user_full_name,
-                        user_language=user.language,
-                        user_timezone=user.timezone
-                    )
+                    # Get AI-generated message using simple model invocation
+                    response = model.invoke(prompt)
+                    reminder_text = response.content
                     
                     # Send via WhatsApp
                     result = whatsapp_client.send_message(

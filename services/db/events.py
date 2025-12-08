@@ -207,13 +207,29 @@ def generate_instances(event_id, start_date, end_date):
                 'error': 'Cannot generate instances from an instance. Use the parent event.'
             }
         
-        instances = []
-        current_date = start_date
+        # Find the latest existing instance to determine where to start generating
+        latest_instance = Event.query.filter_by(
+            parent_event_id=event_id
+        ).order_by(Event.event_time.desc()).first()
         
-        # Check if we should stop at recurrence_end_date
-        effective_end_date = end_date
-        if template.recurrence_end_date and template.recurrence_end_date < end_date:
-            effective_end_date = template.recurrence_end_date
+        if latest_instance:
+            # Start from the day after the latest instance
+            current_date = latest_instance.event_time.date() + timedelta(days=1)
+            logger.debug(f"Latest instance found at {latest_instance.event_time}, starting from {current_date}")
+        else:
+            # No instances exist, start from start_date (but normalize to date only)
+            current_date = start_date.date()
+            logger.debug(f"No instances found, starting from {current_date}")
+        
+        # Convert dates to date objects for comparison (ignore time)
+        effective_end_date = end_date.date()
+        if template.recurrence_end_date:
+            recurrence_end = template.recurrence_end_date.date()
+            if recurrence_end < effective_end_date:
+                effective_end_date = recurrence_end
+        
+        instances = []
+        instances_created_count = 0  # Track total created separately
         
         while current_date <= effective_end_date:
             should_create = False
@@ -244,19 +260,26 @@ def generate_instances(event_id, start_date, end_date):
                     should_create = True
             
             if should_create:
-                # Check if instance already exists for this date
-                instance_time = current_date.replace(
-                    hour=template.event_time.hour,
-                    minute=template.event_time.minute,
-                    second=template.event_time.second
+                # Create datetime from current_date + template's time
+                from datetime import datetime as dt
+                instance_time = dt.combine(
+                    current_date,
+                    template.event_time.time()
                 )
                 
+                # Check both in database AND in current session (uncommitted instances)
                 existing = Event.query.filter_by(
                     parent_event_id=event_id,
                     event_time=instance_time
                 ).first()
                 
-                if not existing:
+                # Also check if we're about to create it in this session
+                already_in_session = any(
+                    inst.parent_event_id == event_id and inst.event_time == instance_time 
+                    for inst in instances
+                )
+                
+                if not existing and not already_in_session:
                     # Create new instance
                     instance = Event(
                         user_id=template.user_id,
@@ -267,6 +290,15 @@ def generate_instances(event_id, start_date, end_date):
                     )
                     db.session.add(instance)
                     instances.append(instance)
+                    instances_created_count += 1  # Increment counter
+                    
+                    # Commit after every 50 instances to reduce chance of duplicates
+                    # from concurrent runs and to make them visible to subsequent checks
+                    if len(instances) % 50 == 0:
+                        db.session.commit()
+                        # Clear instances list after commit since they're now in DB
+                        instances.clear()
+                        logger.debug(f"Committed batch of 50 instances for event_id={event_id}")
             
             # Move to next interval
             if template.recurrence_frequency == 'daily':
@@ -284,12 +316,12 @@ def generate_instances(event_id, start_date, end_date):
         
         db.session.commit()
         
-        logger.info(f"Successfully generated {len(instances)} instances for event_id={event_id}")
+        logger.info(f"Successfully generated {instances_created_count} instances for event_id={event_id}")
         
         return {
             'success': True,
-            'instances': [inst.to_dict() for inst in instances],
-            'count': len(instances)
+            'instances': [],  # Don't return instance details to save memory
+            'count': instances_created_count
         }
         
     except Exception as e:

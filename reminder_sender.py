@@ -209,7 +209,7 @@ def _send_escalating_reminders_impl():
                 event_messages = Message.query.filter(
                     Message.event_id == event.id,
                     Message.sent_by == 'ai'
-                ).order_by(Message.created_at.desc()).all()
+                ).order_by(Message.timestamp.desc()).all()
                 
                 message_count = len(event_messages)
                 
@@ -221,7 +221,7 @@ def _send_escalating_reminders_impl():
                 # Check if enough time has passed since the last message (at least 30 minutes)
                 if event_messages:
                     last_message = event_messages[0]  # Most recent
-                    time_since_last_message = now - last_message.created_at
+                    time_since_last_message = now - last_message.timestamp
                     minutes_since_last = int(time_since_last_message.total_seconds() / 60)
                     
                     if minutes_since_last < 30:

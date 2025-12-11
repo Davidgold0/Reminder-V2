@@ -104,6 +104,7 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
         user_full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or None
         user_language = user.get('language') or 'en'
         user_timezone = user.get('timezone') or 'UTC'
+        is_registered = user.get('is_registered', False)
         
         # Save incoming message to database (now we always have a user_id)
         add_message(
@@ -113,7 +114,7 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
             required_follow_up=False
         )
         
-        # Get agent and process message
+        # Get agent and process message with appropriate prompt
         agent = get_agent(tools=AGENT_TOOLS)
         response_text = agent.process_message(
             phone=phone,
@@ -121,7 +122,8 @@ def process_incoming_message(phone: str, message_text: str) -> dict:
             user_id=user_id,
             user_full_name=user_full_name,
             user_language=user_language,
-            user_timezone=user_timezone
+            user_timezone=user_timezone,
+            is_registered=is_registered
         )
         
         # Save AI response to database (we always have user_id now)

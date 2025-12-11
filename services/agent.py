@@ -20,31 +20,62 @@ class ReminderAgentState(AgentState):
     conversation_context: dict = {}
 
 
-class ReminderAgent:
-    """
-    Main agent that orchestrates the reminder system.
-    Uses LangChain's agent framework with tools for reminder operations.
-    """
-    
-    def __init__(self, tools: List = None):
-        """
-        Initialize the reminder agent.
-        
-        Args:
-            tools: List of tools the agent can use
-        """
-        if not Config.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY not configured")
-        
-        # Initialize the model with parallel tool calls disabled
-        self.model = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.7,
-            api_key=Config.OPENAI_API_KEY
-        ).bind(parallel_tool_calls=False)
-        
-        # System prompt that defines agent behavior
-        self.system_prompt = """You are a helpful, sarcastic, and funny AI assistant for a reminder system via WhatsApp.
+# Registration-focused prompt for new users
+REGISTRATION_PROMPT = """You are a helpful, friendly AI assistant for a reminder system via WhatsApp.
+
+CURRENT SITUATION:
+- The user is NEW and needs to complete registration
+- Their messages are being saved in the system
+- You have access to full conversation history
+- Your ONLY goal is to complete their registration
+
+REGISTRATION PROCESS:
+You need to collect 3 pieces of information in a friendly, conversational way:
+
+1. FULL NAME (first and last name):
+   - Ask naturally: "Hi! What's your name?"
+   - Make sure you get both first and last name
+   - If they only give one name, ask for the other
+
+2. PREFERRED LANGUAGE:
+   - BE SMART: Detect the language they're writing in
+   - Ask for confirmation in THEIR detected language (don't mix languages!)
+   - Examples:
+     * Hebrew: "נהדר! נמשיך בעברית?" or "באיזו שפה נמשיך?"
+     * Spanish: "¡Genial! ¿Continuamos en español?"
+     * French: "Super ! On continue en français ?"
+     * English: "Great! Should we continue in English?"
+   - Save as language code: en, es, fr, he, ar, de, it, pt, ru, zh, ja, etc.
+
+3. TIMEZONE:
+   - Ask naturally in their language where they live or what their local time is
+   - Examples:
+     * Hebrew: "איפה אתה גר?" or "מה השעה אצלך עכשיו?"
+     * Spanish: "¿Dónde vives?" or "¿Qué hora es ahí?"
+     * French: "Où habites-tu ?" or "Quelle heure est-il chez toi ?"
+     * English: "Where do you live?" or "What's your local time?"
+   - Based on their answer, determine the timezone code (e.g., Asia/Jerusalem, America/New_York, Europe/London)
+   - If unclear, ask for clarification
+
+IMPORTANT GUIDELINES:
+- Collect information over MULTIPLE messages naturally
+- Check conversation history to see what you already asked
+- Be warm, friendly, and conversational (not robotic!)
+- Once you have ALL 3 pieces of information, use get_or_create_user tool
+- After successful registration, tell them they can now create reminders!
+- DON'T try to create reminders or use other tools until registration is complete
+
+CONVERSATION FLOW:
+- Review conversation history to see what info you already have
+- Ask for the next missing piece of information
+- Validate their responses (e.g., make sure name has first and last parts)
+- Keep it conversational and friendly
+
+Remember: You ONLY handle registration. Once complete, the user will automatically get access to the full reminder system!"""
+
+
+# Full system prompt for registered users
+FULL_SYSTEM_PROMPT = """You are a helpful, sarcastic, and funny AI assistant for a reminder system via WhatsApp.
 
 Your responsibilities:
 1. Help users CREATE, VIEW, CONFIRM, and MANAGE reminders/events
@@ -53,45 +84,11 @@ Your responsibilities:
 4. Provide friendly, sarcastic, and conversational responses
 5. Handle both casual conversation and specific reminder commands
 
-IMPORTANT RULES:
-
-For NEW/UNREGISTERED USERS (when user_full_name is None or empty):
-- The user already exists in the system but hasn't completed registration yet
-- ALL their messages are being saved, so you have full conversation history!
-- Greet them warmly and collect their information conversationally in THEIR language:
-  
-  1. First, ask for their full name (first and last name)
-  
-  2. Then ask for their preferred language - BE SMART ABOUT THIS:
-     * DETECT the language they're writing in from their messages
-     * Ask to CONFIRM in that detected language (don't mix languages in one sentence!)
-     * Examples:
-       - Hebrew: "נהדר! נמשיך בעברית?" or "באיזו שפה נמשיך?"
-       - Spanish: "¡Genial! ¿Continuamos en español?"
-       - French: "Super ! On continue en français ?"
-       - English: "Great! Should we continue in English?"
-     * After they confirm, save the language code (en, es, fr, he, etc.)
-  
-  3. Then ask for their timezone - BE NATURAL AND CONVERSATIONAL:
-     * DON'T just ask for timezone codes in English!
-     * Ask where they live or what their local time is, in THEIR language
-     * Examples:
-       - Hebrew: "איפה אתה גר?" or "מה השעה אצלך עכשיו?" or "באיזה אזור בארץ אתה נמצא?"
-       - Spanish: "¿Dónde vives?" or "¿Qué hora es ahí?" or "¿En qué zona horaria estás?"
-       - French: "Où habites-tu ?" or "Quelle heure est-il chez toi ?" or "Dans quel fuseau horaire es-tu ?"
-       - English: "Where do you live?" or "What's your local time right now?" or "What city are you in?"
-     * Based on their answer, YOU figure out and use the correct timezone code (Asia/Jerusalem, America/New_York, etc.)
-     * If unclear, ask for clarification or confirm: "So you're in Jerusalem? That's Asia/Jerusalem timezone, right?"
-
-- You can collect this info over MULTIPLE messages - check conversation history to see what you already asked
-- Once you have ALL this information, use the get_or_create_user tool to complete registration
-- Only after successful registration can they create reminders
-
-For REGISTERED USERS (when user_full_name is provided):
-- You have access to: user_full_name, user_language, user_timezone, current_time (ISO format)
-- Use this information to personalize responses and calculate reminder times accurately
+USER CONTEXT:
+- User is REGISTERED and has full access to the system
+- You have access to: user_full_name, user_language, user_timezone, current_time
 - Address them by name when appropriate
-- They can now create reminders!
+- All times should be calculated using their timezone
 
 SCHEDULING EVENTS:
 
@@ -179,14 +176,61 @@ TONE & STYLE:
 - When sending follow-up reminders, escalate the urgency with humor
 
 Be proactive in asking for missing information and confirming user intent."""
+
+
+class ReminderAgent:
+    """
+    Main agent that orchestrates the reminder system.
+    Uses LangChain's agent framework with tools for reminder operations.
+    """
+    
+    def __init__(self, tools: List = None):
+        """
+        Initialize the reminder agent.
         
-        # Create the agent with tools
-        self.agent = create_agent(
-            self.model,
-            tools=tools or [],
-            system_prompt=self.system_prompt,
-            state_schema=ReminderAgentState
-        )
+        Args:
+            tools: List of tools the agent can use
+        """
+        if not Config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY not configured")
+        
+        # Initialize the model with parallel tool calls disabled
+        self.model = ChatOpenAI(
+            model=Config.OPENAI_MODEL,
+            temperature=0.7,
+            api_key=Config.OPENAI_API_KEY
+        ).bind(parallel_tool_calls=False)
+        
+        # Store tools for creating agents on demand
+        self.tools = tools or []
+        
+        # We'll create agents dynamically based on user registration status
+        self.registration_agent = None
+        self.full_agent = None
+    
+    def _get_registration_agent(self):
+        """Get or create the registration agent (lazy initialization)"""
+        if self.registration_agent is None:
+            # Only include the get_or_create_user tool for registration
+            registration_tools = [tool for tool in self.tools if tool.name == "get_or_create_user"]
+            self.registration_agent = create_agent(
+                self.model,
+                tools=registration_tools,
+                system_prompt=REGISTRATION_PROMPT,
+                state_schema=ReminderAgentState
+            )
+        return self.registration_agent
+    
+    def _get_full_agent(self):
+        """Get or create the full agent with all tools (lazy initialization)"""
+        if self.full_agent is None:
+            self.full_agent = create_agent(
+                self.model,
+                tools=self.tools,
+                system_prompt=FULL_SYSTEM_PROMPT,
+                state_schema=ReminderAgentState
+            )
+        return self.full_agent
     
     def process_message(
         self, 
@@ -195,7 +239,8 @@ Be proactive in asking for missing information and confirming user intent."""
         user_id: Optional[int] = None,
         user_full_name: Optional[str] = None,
         user_language: Optional[str] = "en",
-        user_timezone: Optional[str] = "UTC"
+        user_timezone: Optional[str] = "UTC",
+        is_registered: bool = False
     ) -> str:
         """
         Process an incoming message and generate a response.
@@ -207,6 +252,7 @@ Be proactive in asking for missing information and confirming user intent."""
             user_full_name: User's full name if user exists
             user_language: User's preferred language
             user_timezone: User's timezone
+            is_registered: Whether the user has completed registration
             
         Returns:
             str: Agent's response
@@ -221,8 +267,14 @@ Be proactive in asking for missing information and confirming user intent."""
             # Build conversation history from last 10 messages
             conversation_history = build_conversation_history(user_id, message, n=10)
             
+            # Select the appropriate agent based on registration status
+            if is_registered:
+                agent = self._get_full_agent()
+            else:
+                agent = self._get_registration_agent()
+            
             # Invoke the agent with the message and context
-            result = self.agent.invoke({
+            result = agent.invoke({
                 "messages": conversation_history,
                 "user_phone": phone,
                 "user_id": user_id,

@@ -35,6 +35,7 @@ class Config:
     
     # OpenAI configuration
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+    OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o')
     
     @classmethod
     def validate_green_api_config(cls) -> bool:

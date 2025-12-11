@@ -329,6 +329,11 @@ def confirm_reminder(event_id: int) -> str:
             logger.info(f"Successfully confirmed event: event_id={event_id}")
             return f"✓ {result['message']}"
         else:
+            # Check if already confirmed - treat as success for user experience
+            if result.get('already_confirmed'):
+                logger.info(f"Event {event_id} was already confirmed - treating as success")
+                return f"✓ No worries, this event was already confirmed! 👍"
+            
             logger.error(f"Failed to confirm event {event_id}: {result['error']}")
             return f"Error: {result['error']}"
             

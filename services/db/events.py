@@ -121,6 +121,13 @@ def add_event(user_id, description, event_time, is_recurring=False,
                     'success': False,
                     'error': 'recurrence_frequency must be daily, weekly, monthly, or yearly'
                 }
+            # Weekly events require recurrence_days_of_week
+            if recurrence_frequency == 'weekly' and not recurrence_days_of_week:
+                logger.warning(f"Weekly recurring event missing recurrence_days_of_week for user_id={user_id}")
+                return {
+                    'success': False,
+                    'error': 'recurrence_days_of_week is required for weekly recurring events'
+                }
         
         # Create new event
         new_event = Event(
@@ -130,8 +137,8 @@ def add_event(user_id, description, event_time, is_recurring=False,
             is_recurring=is_recurring,
             recurrence_frequency=recurrence_frequency if is_recurring else None,
             recurrence_interval=recurrence_interval if is_recurring else None,
-            recurrence_end_date=recurrence_end_date,
-            recurrence_days_of_week=recurrence_days_of_week
+            recurrence_end_date=recurrence_end_date if is_recurring else None,
+            recurrence_days_of_week=recurrence_days_of_week if is_recurring else None
         )
         
         # Add to database
@@ -540,6 +547,22 @@ def confirm_event(event_id: int) -> dict:
                 'error': f'Event with ID {event_id} does not exist'
             }
         
+        # Validate event can be confirmed
+        if event.is_confirmed:
+            logger.warning(f"Event {event_id} is already confirmed")
+            return {
+                'success': False,
+                'error': f'Event "{event.description}" has already been confirmed',
+                'already_confirmed': True
+            }
+        
+        if not event.is_message_sent:
+            logger.warning(f"Cannot confirm event {event_id} - reminder message hasn't been sent yet")
+            return {
+                'success': False,
+                'error': 'Cannot confirm event - reminder message has not been sent yet'
+            }
+        
         # Update the event
         event.is_confirmed = True
         event.updated_at = datetime.utcnow()
@@ -658,6 +681,28 @@ def update_recurring_event(event_id: int, description: str = None, event_time: d
                 'error': 'Event is not a recurring template. Can only update recurring templates.'
             }
         
+        # Validate recurrence_frequency if provided
+        if recurrence_frequency is not None:
+            if recurrence_frequency not in ['daily', 'weekly', 'monthly', 'yearly']:
+                logger.warning(f"Invalid recurrence_frequency '{recurrence_frequency}' for event_id={event_id}")
+                return {
+                    'success': False,
+                    'error': 'recurrence_frequency must be daily, weekly, monthly, or yearly'
+                }
+        
+        # Determine the final recurrence frequency (use new if provided, else keep current)
+        final_frequency = recurrence_frequency if recurrence_frequency is not None else event.recurrence_frequency
+        
+        # Validate weekly events have recurrence_days_of_week
+        if final_frequency == 'weekly':
+            final_days = recurrence_days_of_week if recurrence_days_of_week is not None else event.recurrence_days_of_week
+            if not final_days:
+                logger.warning(f"Weekly recurring event missing recurrence_days_of_week for event_id={event_id}")
+                return {
+                    'success': False,
+                    'error': 'recurrence_days_of_week is required for weekly recurring events'
+                }
+        
         # Update fields if provided
         updated_fields = []
         if description is not None:
@@ -669,6 +714,10 @@ def update_recurring_event(event_id: int, description: str = None, event_time: d
         if recurrence_frequency is not None:
             event.recurrence_frequency = recurrence_frequency
             updated_fields.append('recurrence_frequency')
+            # If changing to non-weekly, clear recurrence_days_of_week
+            if recurrence_frequency != 'weekly' and event.recurrence_days_of_week:
+                event.recurrence_days_of_week = None
+                updated_fields.append('recurrence_days_of_week (cleared)')
         if recurrence_days_of_week is not None:
             event.recurrence_days_of_week = recurrence_days_of_week
             updated_fields.append('recurrence_days_of_week')

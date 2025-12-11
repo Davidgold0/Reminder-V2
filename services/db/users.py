@@ -42,6 +42,38 @@ class User(db.Model):
 
 # User Service Functions
 
+def normalize_phone_number(phone: str) -> list:
+    """
+    Normalize phone number to multiple possible formats for matching.
+    Handles Israeli phone numbers with different formats.
+    
+    Args:
+        phone: Phone number in any format
+        
+    Returns:
+        list: List of possible phone number formats to try
+    """
+    # Remove common separators
+    clean = phone.replace('+', '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+    
+    formats = [clean]  # Start with cleaned version
+    
+    # If it starts with 0 (Israeli local format), try with 972
+    if clean.startswith('0'):
+        formats.append('972' + clean[1:])
+    
+    # If it starts with 972, try with leading 0
+    if clean.startswith('972'):
+        formats.append('0' + clean[3:])
+    
+    # If it doesn't start with 972 or 0, try both
+    if not clean.startswith('972') and not clean.startswith('0'):
+        formats.append('972' + clean)
+        formats.append('0' + clean)
+    
+    return formats
+
+
 def add_user(phone_number, first_name=None, last_name=None, timezone=None, language=None):
     """
     Add a new user to the database. Supports partial registration.
@@ -202,7 +234,8 @@ def update_user(phone_number, first_name=None, last_name=None, timezone=None, la
 
 def get_user_by_phone(phone_number):
     """
-    Search for a user by phone number.
+    Search for a user by phone number. Tries multiple formats to handle
+    different phone number representations (with/without country code).
     
     Args:
         phone_number (str): The phone number to search for
@@ -216,16 +249,24 @@ def get_user_by_phone(phone_number):
     logger.debug(f"get_user_by_phone called for phone_number={phone_number}")
     
     try:
-        user = User.query.filter_by(phone_number=phone_number).first()
+        # Try multiple phone number formats
+        phone_formats = normalize_phone_number(phone_number)
+        logger.debug(f"Trying phone formats: {phone_formats}")
+        
+        user = None
+        for phone_format in phone_formats:
+            user = User.query.filter_by(phone_number=phone_format).first()
+            if user:
+                logger.debug(f"User found with format '{phone_format}': id={user.id}, is_registered={user.is_registered}")
+                break
         
         if user:
-            logger.debug(f"User found: id={user.id}, is_registered={user.is_registered}")
             return {
                 'success': True,
                 'user': user.to_dict()
             }
         else:
-            logger.debug(f"No user found with phone number {phone_number}")
+            logger.debug(f"No user found with any format of phone number {phone_number}")
             return {
                 'success': False,
                 'error': f'No user found with phone number {phone_number}'

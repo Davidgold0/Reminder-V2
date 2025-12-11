@@ -274,15 +274,24 @@ def generate_instances(event_id, start_date, end_date):
                     template.event_time.time()
                 )
                 
-                # Check both in database AND in current session (uncommitted instances)
-                existing = Event.query.filter_by(
-                    parent_event_id=event_id,
-                    event_time=instance_time
+                # Normalize to remove microseconds to ensure consistency
+                instance_time = instance_time.replace(microsecond=0)
+                
+                # Check if instance already exists (check by parent, date and time rounded to minute)
+                # This prevents duplicates caused by slight time differences
+                rounded_time_start = instance_time.replace(second=0)
+                rounded_time_end = rounded_time_start.replace(second=59)
+                
+                existing = Event.query.filter(
+                    Event.parent_event_id == event_id,
+                    Event.event_time >= rounded_time_start,
+                    Event.event_time <= rounded_time_end
                 ).first()
                 
                 # Also check if we're about to create it in this session
                 already_in_session = any(
-                    inst.parent_event_id == event_id and inst.event_time == instance_time 
+                    inst.parent_event_id == event_id and 
+                    inst.event_time.replace(second=0) == rounded_time_start
                     for inst in instances
                 )
                 

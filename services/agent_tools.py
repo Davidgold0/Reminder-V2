@@ -482,6 +482,69 @@ def get_last_messages(n: int = 20, runtime: ToolRuntime = None) -> str:
 
 
 @tool
+def get_pending_reminders(runtime: ToolRuntime = None) -> str:
+    """
+    Get ONLY pending (unconfirmed) reminders that have been messaged to the user.
+    Use this tool when a user responds with confirmation phrases (yes/ok/done/etc.) to help identify
+    WHICH specific reminder they are confirming.
+    
+    The user's ID is automatically retrieved from the agent state - you don't need to provide it.
+    
+    Returns:
+        Formatted list of pending reminders with their descriptions, times, and IDs, or error message
+    """
+    from services.db.events import Event
+    from datetime import datetime, timedelta
+    
+    # Get user_id from agent state
+    user_id = runtime.state.get("user_id")
+    if not user_id:
+        logger.error("user_id not found in agent state")
+        return "Error: Unable to retrieve user ID from system."
+    
+    logger.info(f"get_pending_reminders called for user_id={user_id}")
+    
+    try:
+        # Get current time - look for events from past 3 hours to current time + 30 minutes
+        now = datetime.utcnow()
+        three_hours_ago = now - timedelta(hours=3)
+        thirty_min_from_now = now + timedelta(minutes=30)
+        
+        # Query for unconfirmed events that have been messaged
+        logger.debug(f"Fetching pending reminders for user_id={user_id}")
+        pending_events = Event.query.filter(
+            Event.user_id == user_id,
+            Event.is_confirmed == False,
+            Event.is_message_sent == True,
+            Event.parent_event_id != None  # Only instances, not templates
+        ).order_by(Event.event_time.asc()).all()
+        
+        if not pending_events:
+            logger.info(f"No pending reminders found for user_id={user_id}")
+            return "No pending reminders found."
+        
+        logger.info(f"Retrieved {len(pending_events)} pending reminder(s) for user_id={user_id}")
+        
+        # Format events with descriptions and IDs
+        formatted = f"⏳ Pending reminders that need confirmation:\n\n"
+        for i, event in enumerate(pending_events, 1):
+            event_time = datetime.fromisoformat(event.event_time.isoformat()) if hasattr(event.event_time, 'isoformat') else event.event_time
+            description = event.description
+            event_id = event.id
+            
+            formatted += f"{i}. Event ID: {event_id}\n"
+            formatted += f"   📝 Description: {description}\n"
+            formatted += f"   🕐 Time: {event_time.strftime('%Y-%m-%d %H:%M')}\n\n"
+        
+        logger.debug(f"Formatted {len(pending_events)} pending reminders for user_id={user_id}")
+        return formatted
+            
+    except Exception as e:
+        logger.exception(f"Exception in get_pending_reminders for user_id {user_id}: {str(e)}")
+        return f"Error: {str(e)}"
+
+
+@tool
 def get_upcoming_reminders(limit: int = 20, runtime: ToolRuntime = None) -> str:
     """
     Get upcoming events/reminders for a user.
@@ -552,5 +615,6 @@ AGENT_TOOLS = [
     confirm_reminder,
     update_reminder,
     get_last_messages,
+    get_pending_reminders,
     get_upcoming_reminders
 ]

@@ -131,27 +131,37 @@ SCHEDULING EVENTS:
    - Tool calls are executed sequentially, so you can create multiple reminders safely
 
 CONFIRMING EVENTS - CRITICAL:
-- When users respond to reminder messages with ANY acknowledgment (yes/ok/confirmed/I'll be there/got it/כן/אוקיי/יצאתי/etc.):
+- When users respond to reminder messages with ANY acknowledgment (yes/ok/confirmed/I'll be there/got it/done/כן/אוקיי/יצאתי/סיימתי/etc.):
   
   YOU MUST FOLLOW THESE STEPS - NO EXCEPTIONS:
   
-  STEP 1: Look at the conversation history for the MOST RECENT AI message with "[Event ID: X]"
-  STEP 2: **ALWAYS** call confirm_reminder(X) with that event_id - YOU MUST USE THE TOOL!
-  STEP 3: Only AFTER the tool returns success, give an enthusiastic confirmation response
+  STEP 1: **FIRST** call get_pending_reminders() to see ALL pending reminders
+  STEP 2: Analyze the user's message for context clues (words from description, specific details)
+  STEP 3: If the user's message contains words that match a specific reminder description, confirm THAT one
+  STEP 4: If no clear match, look at conversation history for the MOST RECENT AI message with "[Event ID: X]"
+  STEP 5: If you can confidently identify which reminder, **ALWAYS** call confirm_reminder(X) - YOU MUST USE THE TOOL!
+  STEP 6: Only AFTER the tool returns success, give an enthusiastic confirmation response
   
 - CRITICAL: Do NOT just say "confirmed!" - you MUST actually call the confirm_reminder tool!
-- The event IDs are already in your conversation history with "[Event ID: X]" format
-- Look for the most recent AI message that has an Event ID - that's what they're confirming
+- CRITICAL: When multiple reminders are pending, try to match the user's response to the specific reminder description
+- CRITICAL: If you DON'T KNOW which reminder they're confirming (multiple pending, no clear match), **ASK FOR CLARIFICATION** - list the pending reminders and ask which one they mean. DO NOT GUESS!
+- The event IDs are in your conversation history with "[Event ID: X]" format
+- Use get_pending_reminders() to see all pending reminders and their descriptions
   
-- Examples of what users might say:
-  * "yes" / "כן" → Find recent [Event ID: X], call confirm_reminder(X)
-  * "ok" / "אוקיי" → Find recent [Event ID: X], call confirm_reminder(X)
-  * "I left" / "יצאתי" → Find recent [Event ID: X], call confirm_reminder(X)
-  * "done" / "סיימתי" → Find recent [Event ID: X], call confirm_reminder(X)
-  * "got it" → Find recent [Event ID: X], call confirm_reminder(X)
+- Examples of what users might say and how to handle them:
+  * "meeting is done" → Check pending reminders, find one with "meeting" in description, confirm that specific event
+  * "yes" / "כן" → If ONLY ONE pending reminder, confirm it. If MULTIPLE pending, ASK which one they mean
+  * "doctor appointment done" → Find the reminder with "doctor" or "appointment" in description
+  * "I left" / "יצאתי" → Look for reminders about leaving/going somewhere
+  * "done" / "סיימתי" → Use get_pending_reminders() and conversation context. If unclear, ASK for clarification
+  * "a is done" → Find the reminder with "a" in the description
+  
+- Clarification examples:
+  * Multiple pending, user says "done" → "I see you have 2 pending reminders: 1) Meeting at 3pm 2) Call John at 3pm. Which one are you confirming?"
+  * Multiple pending, user says "yes" → "Which reminder are you confirming? You have: 1) Reminder A, 2) Reminder B"
 
 - If they say "no" or "can't make it", still call confirm_reminder (they acknowledged it)
-- If no Event ID is found in recent messages, ask them what they're confirming
+- NEVER confirm a reminder if you're unsure which one - always ask first!
 
 VIEWING EVENTS:
 - Use get_upcoming_reminders to show users their scheduled events

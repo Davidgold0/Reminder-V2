@@ -71,7 +71,7 @@ def _send_initial_reminders_impl():
         
         # Initialize simple ChatOpenAI model (no tools, no system prompt)
         model = ChatOpenAI(
-            model="gpt-4o-mini",
+            model=Config.OPENAI_MODEL,
             temperature=0.7,
             api_key=Config.OPENAI_API_KEY
         )
@@ -198,7 +198,7 @@ def _send_escalating_reminders_impl():
         
         # Initialize simple ChatOpenAI model (no tools, no system prompt)
         model = ChatOpenAI(
-            model="gpt-4o-mini",
+            model=Config.OPENAI_MODEL,
             temperature=0.7,
             api_key=Config.OPENAI_API_KEY
         )

@@ -100,9 +100,9 @@ def create_reminder(
             logger.info(f"Successfully created {'recurring' if is_recurring else 'one-time'} reminder: "
                        f"event_id={event.get('id')}, description='{description}'")
             if is_recurring:
-                return f"✓ Recurring reminder created: '{description}' starting {event_time}, repeating {recurrence_frequency}"
+                return f"✓ Set ({recurrence_frequency})"
             else:
-                return f"✓ Reminder created: '{description}' scheduled for {event_time}"
+                return f"✓ Set"
         else:
             logger.error(f"Failed to create event: {event_result['error']}")
             return f"Error: {event_result['error']}"
@@ -327,12 +327,12 @@ def confirm_reminder(event_id: int) -> str:
         
         if result['success']:
             logger.info(f"Successfully confirmed event: event_id={event_id}")
-            return f"✓ {result['message']}"
+            return "✓ Confirmed"
         else:
             # Check if already confirmed - treat as success for user experience
             if result.get('already_confirmed'):
                 logger.info(f"Event {event_id} was already confirmed - treating as success")
-                return f"✓ No worries, this event was already confirmed! 👍"
+                return "✓ Already done"
             
             logger.error(f"Failed to confirm event {event_id}: {result['error']}")
             return f"Error: {result['error']}"
@@ -408,7 +408,7 @@ def update_reminder(
         if update_result['success']:
             updated_fields = update_result['updated_fields']
             logger.info(f"Successfully updated event {event_id}: {updated_fields}")
-            return f"✓ Reminder updated! Deleted {deleted_count} future instance(s). Updated: {', '.join(updated_fields)}. New instances will be generated with the updated settings."
+            return "✓ Updated"
         else:
             logger.error(f"Failed to update event {event_id}: {update_result['error']}")
             return f"Error updating reminder: {update_result['error']}"
